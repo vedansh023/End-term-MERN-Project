@@ -133,26 +133,4 @@ CMD ["node", "index.js"]
    - `CLIENT_ORIGIN`: Your Render deployment URL (`https://<service-name>.onrender.com`)
 3. Render automatically runs the build and starts the application listening on the dynamic `PORT`.
 
----
 
-## 🎥 Recommended Evaluator Demo Workflow
-
-1. **User Registration & Login**:
-   - Register Account A (e.g. "Alice") and Account B (e.g. "Bob" in a private window).
-2. **Group Creation & Invitation**:
-   - Alice creates a group (e.g. "Goa Vacation 2026") and copies the 6-character invite code.
-   - Bob enters the code to join the group.
-3. **Logging Expenses**:
-   - Add an expense under category **Food** ("Beachside Dinner" ₹3,000) split equally.
-   - Add a custom expense under category **Travel** ("Cab to Airport" ₹1,200) with custom member shares and a receipt note.
-4. **Dashboard & Analytics Review**:
-   - View the updated **Total Spending**, **Top Contributor**, and **Personal Summary**.
-   - Inspect the **Category Breakdown** bars and **Monthly Chart**.
-5. **Debt Settlement Flow**:
-   - Review the calculated suggestion under **Settle in the fewest payments**.
-   - Open **Review payment**, enter an optional UPI note, and mark as **Paid** (or test **Delayed** / **Pending** to verify balance retention).
-6. **Activity Timeline & Filters**:
-   - Filter activity by Category (e.g., Food only), Status (Paid vs Pending), or Person.
-7. **Reports & Export**:
-   - Click **Export CSV** to verify the downloaded spreadsheet.
-   - Click **Print Summary** to preview the formatted printable report.
