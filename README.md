@@ -22,31 +22,35 @@ Built with **React 19 + Express.js + MongoDB Atlas**, hosted on **Render**.
 - **Exact Paise Precision**: Amounts are stored internally as integer paise (1 INR = 100 paise) to eliminate floating-point rounding errors across custom and equal splits.
 - **Greedy Debt Solver**: Graph algorithm that matches maximum debtors with maximum creditors to settle all balances in the minimum theoretical number of transfers.
 
-### 2. Comprehensive Settlement Tracking
-- **Settlement Statuses**: Supports `Paid`, `Pending`, and `Delayed` statuses.
-- **Strict Balance Integrity**: Only confirmed `Paid` settlements reduce outstanding debts. `Pending` and `Delayed` statuses preserve balances until marked paid.
+### 2. Multi-Payer Expenses & Flexible Split Modes
+- **Multiple Payers**: Support for expenses funded by multiple people simultaneously with automatic balance crediting.
+- **4 Flexible Split Modes**:
+  - **Equal Split**: Even division among selected members with remainder paise distributed cleanly.
+  - **Custom Amounts (₹)**: Specific rupee amounts per member.
+  - **Percentages (%)**: Exact percentage allocations totaling 100%.
+  - **Shares / Weights**: Ratio allocations (e.g., 2 shares for a couple, 1 share for solo traveler).
+
+### 3. Settlement Tracking & Gentle "Nudge" Reminders
+- **Settlement Statuses**: Supports `Paid`, `Pending`, and `Delayed` statuses. Only confirmed `Paid` settlements reduce outstanding debts.
 - **Payment Notes**: Record payment references (e.g. UPI Ref ID, transaction IDs, or cash notes).
-- **Timestamps**: All settlements and expenses track exact timestamps with date & time display.
-- **Duplicate Prevention**: Backend rate-limiting guards against rapid double-clicks within 5 seconds, and UI buttons lock into a loading state during submission.
+- **Friendly Nudge Reminders**: One-click reminder button for awaiting payments that copies a polite settlement reminder to the clipboard.
+- **Duplicate Prevention**: Backend rate-limiting guards against rapid double-clicks within 5 seconds.
 
-### 3. Dashboard & Analytics
-- **Total Group Spending**: Live counter of all group expenditures.
-- **Top Contributor ("Who paid the most")**: Displays the member who spent the highest total.
+### 4. Group Trip Budgeting & Analytics
+- **Live Spending Counter**: Total group expenditures and who paid the most.
+- **Trip Budget Cap & Progress Meter**: Set target trip budgets (₹) with real-time progress bar alerts (Green `<75%`, Amber `75-99%`, Red `Over Budget`).
 - **Personal Financial Summary**: Personalized card for the logged-in user showing total paid, total share owed, and net balance position.
-- **Spending by Category**: Breakdown with visual progress bars across categories.
-- **Monthly Spending Overview**: Monthly distribution chart visualizing spending over time.
+- **Spending by Category & Monthly Trends**: Category breakdown with progress bars and monthly chart.
 
-### 4. Expense Categorization & Activity Filtering
-- **7 Predefined Categories**: Food (🍔), Travel (✈️), Rent (🏠), Shopping (🛍️), Entertainment (🎬), Utilities (💡), and Other (📦).
-- **Notes & Receipts**: Add optional store notes, bill numbers, or receipt references to any expense.
-- **Multi-Factor Filtering**: Instantly filter group activity by:
-  - Activity Type / Status (All, Expenses, Settlements, Paid, Pending, Delayed)
-  - Category (Food, Travel, etc.)
-  - Member (Filter by person)
+### 5. Expense Management & Activity Filtering
+- **Edit & Delete Expenses**: In-place editing and deletion of logged expenses with instant ledger recalculations.
+- **7 Predefined Categories**: Food (🍔), Travel (✈️), Rent (🏠), Shopping (🛍️), Entertainment (🎬), Utilities (💡), and Other (📦) with receipt notes.
+- **Multi-Factor Filtering**: Instantly filter group activity by type/status, category, or group member.
 
-### 5. Exportable Reports
-- **CSV Download**: One-click export of complete group activity (dates, types, descriptions, categories, amounts, participants, statuses, and notes) with UTF-8 BOM encoding.
-- **Printable Settlement Summary**: Dedicated print view (`@media print`) that formats an invoice-style settlement report for trips, roommates, or event planning.
+### 6. Archive Groups & Exportable Reports
+- **Archive / Restore Groups**: Close settled groups to freeze balances and clean up active dashboards.
+- **CSV Download**: One-click export of complete group activity with UTF-8 BOM encoding.
+- **Printable Settlement Summary**: Dedicated print view (`@media print`) that formats an invoice-style settlement report.
 
 ---
 

@@ -26,6 +26,51 @@ const splitEqually = (totalPaise, memberIds) => {
   }));
 };
 
+const splitByPercentage = (totalPaise, percentageSplits) => {
+  let allocated = 0;
+  const result = percentageSplits.map((item) => {
+    const rawPaise = Math.floor((totalPaise * item.percentage) / 100);
+    allocated += rawPaise;
+    return {
+      userId: item.userId,
+      share: rawPaise,
+    };
+  });
+
+  let remainder = totalPaise - allocated;
+  let idx = 0;
+  while (remainder > 0 && idx < result.length) {
+    result[idx].share += 1;
+    remainder -= 1;
+    idx = (idx + 1) % result.length;
+  }
+  return result;
+};
+
+const splitByShares = (totalPaise, shareSplits) => {
+  const totalShares = shareSplits.reduce((sum, item) => sum + (Number(item.shares) || 0), 0);
+  if (totalShares <= 0) return [];
+
+  let allocated = 0;
+  const result = shareSplits.map((item) => {
+    const rawPaise = Math.floor((totalPaise * (Number(item.shares) || 0)) / totalShares);
+    allocated += rawPaise;
+    return {
+      userId: item.userId,
+      share: rawPaise,
+    };
+  });
+
+  let remainder = totalPaise - allocated;
+  let idx = 0;
+  while (remainder > 0 && idx < result.length) {
+    result[idx].share += 1;
+    remainder -= 1;
+    idx = (idx + 1) % result.length;
+  }
+  return result;
+};
+
 const computeNets = (memberIds, expenses, settlements) => {
   const net = {};
   memberIds.forEach((id) => {
@@ -33,11 +78,21 @@ const computeNets = (memberIds, expenses, settlements) => {
   });
 
   expenses.forEach((expense) => {
-    const paidBy = asId(expense.paidBy);
-    if (net[paidBy] === undefined) {
-      net[paidBy] = 0;
+    if (Array.isArray(expense.payers) && expense.payers.length > 0) {
+      expense.payers.forEach((payer) => {
+        const id = asId(payer.userId);
+        if (net[id] === undefined) {
+          net[id] = 0;
+        }
+        net[id] += (payer.amount || 0);
+      });
+    } else {
+      const paidBy = asId(expense.paidBy);
+      if (net[paidBy] === undefined) {
+        net[paidBy] = 0;
+      }
+      net[paidBy] += expense.amount;
     }
-    net[paidBy] += expense.amount;
 
     expense.splits.forEach((split) => {
       const id = asId(split.userId);
@@ -111,6 +166,8 @@ const simplifyDebts = (net) => {
 module.exports = {
   rupeesToPaise,
   splitEqually,
+  splitByPercentage,
+  splitByShares,
   computeNets,
   simplifyDebts,
 };

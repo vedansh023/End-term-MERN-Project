@@ -22,6 +22,14 @@ const groupSchema = new mongoose.Schema({
       ref: "User",
     },
   ],
+  budget: {
+    type: Number,
+    default: 0,
+  },
+  isArchived: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

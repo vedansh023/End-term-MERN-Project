@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import Navbar from "../components/Navbar";
-import { addExpense, addSettlement, getGroup } from "../services/api";
+import {
+  addExpense,
+  updateExpense,
+  deleteExpense,
+  addSettlement,
+  getGroup,
+  toggleArchiveGroup,
+  updateBudget,
+} from "../services/api";
 import { formatDateTime, formatINR, paiseToRupeesInput } from "../utils/money";
 import { useAuth } from "../context/AuthContext";
 
@@ -23,9 +31,12 @@ function GroupDetail() {
   const [copied, setCopied] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentNote, setPaymentNote] = useState("");
+  const [nudgeToast, setNudgeToast] = useState("");
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
 
+  // Expense form state
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Other");
@@ -34,6 +45,12 @@ function GroupDetail() {
   const [splitAmong, setSplitAmong] = useState([]);
   const [splitMode, setSplitMode] = useState("equal");
   const [customAmounts, setCustomAmounts] = useState({});
+  const [customPercentages, setCustomPercentages] = useState({});
+  const [customShares, setCustomShares] = useState({});
+
+  // Multi-payer state
+  const [isMultiPayer, setIsMultiPayer] = useState(false);
+  const [payerAmounts, setPayerAmounts] = useState({});
 
   // Activity filter state
   const [filterType, setFilterType] = useState("all");
@@ -46,9 +63,28 @@ function GroupDetail() {
     const response = await getGroup(id);
     setData(response.data);
     const members = response.data.group.members;
-    setPaidBy(user._id);
-    setSplitAmong(members.map((member) => member._id));
-    setCustomAmounts(Object.fromEntries(members.map((member) => [member._id, ""])));
+    setPaidBy((current) => current || user._id);
+    setSplitAmong((current) => (current.length > 0 ? current : members.map((m) => m._id)));
+    setCustomAmounts((current) =>
+      Object.keys(current).length > 0
+        ? current
+        : Object.fromEntries(members.map((m) => [m._id, ""]))
+    );
+    setCustomPercentages((current) =>
+      Object.keys(current).length > 0
+        ? current
+        : Object.fromEntries(members.map((m) => [m._id, ""]))
+    );
+    setCustomShares((current) =>
+      Object.keys(current).length > 0
+        ? current
+        : Object.fromEntries(members.map((m) => [m._id, "1"]))
+    );
+    setPayerAmounts((current) =>
+      Object.keys(current).length > 0
+        ? current
+        : Object.fromEntries(members.map((m) => [m._id, ""]))
+    );
   }, [id, user._id]);
 
   useEffect(() => {
@@ -90,6 +126,33 @@ function GroupDetail() {
     [customAmounts, splitAmong]
   );
 
+  const customPercentageTotal = useMemo(
+    () =>
+      splitAmong.reduce(
+        (total, memberId) => total + (Number(customPercentages[memberId]) || 0),
+        0
+      ),
+    [customPercentages, splitAmong]
+  );
+
+  const customSharesTotal = useMemo(
+    () =>
+      splitAmong.reduce(
+        (total, memberId) => total + (Number(customShares[memberId]) || 0),
+        0
+      ),
+    [customShares, splitAmong]
+  );
+
+  const multiPayerTotal = useMemo(
+    () =>
+      Object.values(payerAmounts).reduce(
+        (total, val) => total + (Math.round(Number(val) * 100) || 0),
+        0
+      ),
+    [payerAmounts]
+  );
+
   const personalSummary = useMemo(() => {
     if (!data) return { paid: 0, share: 0, net: 0 };
     const myBalance = data.balances?.find((b) => b.userId === user._id)?.net || 0;
@@ -101,34 +164,133 @@ function GroupDetail() {
     };
   }, [data, user._id]);
 
+  const resetExpenseForm = () => {
+    setEditingExpenseId(null);
+    setDescription("");
+    setAmount("");
+    setNotes("");
+    setCategory("Other");
+    setSplitMode("equal");
+    setIsMultiPayer(false);
+    if (data?.group?.members) {
+      setPaidBy(user._id);
+      setSplitAmong(data.group.members.map((m) => m._id));
+      setCustomAmounts(Object.fromEntries(data.group.members.map((m) => [m._id, ""])));
+      setCustomPercentages(Object.fromEntries(data.group.members.map((m) => [m._id, ""])));
+      setCustomShares(Object.fromEntries(data.group.members.map((m) => [m._id, "1"])));
+      setPayerAmounts(Object.fromEntries(data.group.members.map((m) => [m._id, ""])));
+    }
+  };
+
+  const startEditExpense = (exp) => {
+    setEditingExpenseId(exp._id);
+    setDescription(exp.description);
+    setAmount((exp.amount / 100).toFixed(2));
+    setCategory(exp.category || "Other");
+    setNotes(exp.notes || "");
+    setSplitMode(exp.splitMode || "equal");
+
+    const payerId = exp.paidBy?._id || exp.paidBy;
+    setPaidBy(payerId);
+
+    if (Array.isArray(exp.payers) && exp.payers.length > 1) {
+      setIsMultiPayer(true);
+      const payerMap = Object.fromEntries(
+        data.group.members.map((m) => [m._id, ""])
+      );
+      exp.payers.forEach((p) => {
+        const pId = p.userId?._id || p.userId;
+        payerMap[pId] = (p.amount / 100).toFixed(2);
+      });
+      setPayerAmounts(payerMap);
+    } else {
+      setIsMultiPayer(false);
+    }
+
+    const splitIds = exp.splits.map((s) => s.userId?._id || s.userId);
+    setSplitAmong(splitIds);
+
+    const amountsMap = Object.fromEntries(
+      data.group.members.map((m) => [m._id, ""])
+    );
+    exp.splits.forEach((s) => {
+      const sId = s.userId?._id || s.userId;
+      amountsMap[sId] = (s.share / 100).toFixed(2);
+    });
+    setCustomAmounts(amountsMap);
+
+    // Scroll to expense form
+    window.scrollTo({ top: document.querySelector(".page-head")?.offsetTop || 0, behavior: "smooth" });
+  };
+
+  const handleDeleteExpense = async (expenseId) => {
+    if (!window.confirm("Are you sure you want to delete this expense?")) {
+      return;
+    }
+    setError("");
+    try {
+      await deleteExpense(id, expenseId);
+      if (editingExpenseId === expenseId) {
+        resetExpenseForm();
+      }
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not delete expense");
+    }
+  };
+
   const handleExpense = async (event) => {
     event.preventDefault();
     setError("");
     setIsSubmittingExpense(true);
 
     try {
-      await addExpense(id, {
+      let splitPayload = splitAmong;
+      if (splitMode === "custom") {
+        splitPayload = splitAmong.map((memberId) => ({
+          userId: memberId,
+          amount: customAmounts[memberId],
+        }));
+      } else if (splitMode === "percentage") {
+        splitPayload = splitAmong.map((memberId) => ({
+          userId: memberId,
+          percentage: customPercentages[memberId],
+        }));
+      } else if (splitMode === "shares") {
+        splitPayload = splitAmong.map((memberId) => ({
+          userId: memberId,
+          shares: customShares[memberId],
+        }));
+      }
+
+      let payersPayload = null;
+      if (isMultiPayer) {
+        payersPayload = Object.entries(payerAmounts)
+          .filter(([, val]) => Number(val) > 0)
+          .map(([userId, val]) => ({ userId, amount: val }));
+      }
+
+      const payload = {
         description,
         amount,
         category,
         notes,
         paidBy,
+        payers: payersPayload,
         splitMode,
-        splitAmong:
-          splitMode === "custom"
-            ? splitAmong.map((memberId) => ({
-                userId: memberId,
-                amount: customAmounts[memberId],
-              }))
-            : splitAmong,
-      });
-      setDescription("");
-      setAmount("");
-      setNotes("");
-      setCategory("Other");
+        splitAmong: splitPayload,
+      };
+
+      if (editingExpenseId) {
+        await updateExpense(id, editingExpenseId, payload);
+      } else {
+        await addExpense(id, payload);
+      }
+
+      resetExpenseForm();
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || "Could not add expense");
+      setError(err.response?.data?.message || "Could not save expense");
     } finally {
       setIsSubmittingExpense(false);
     }
@@ -154,6 +316,42 @@ function GroupDetail() {
       setError(err.response?.data?.message || "Could not record settlement");
     } finally {
       setIsSubmittingSettlement(false);
+    }
+  };
+
+  const handleNudge = async (debtorName, amountPaise) => {
+    const msg = `Hey ${debtorName}! Friendly reminder to settle ${formatINR(
+      amountPaise
+    )} for "${data.group.name}" on SplitFair when you get a chance!`;
+    try {
+      await navigator.clipboard.writeText(msg);
+      setNudgeToast(`Nudge copied for ${debtorName}!`);
+      setTimeout(() => setNudgeToast(""), 3500);
+    } catch {
+      setNudgeToast(`Reminder: ${msg}`);
+      setTimeout(() => setNudgeToast(""), 3500);
+    }
+  };
+
+  const handleToggleArchive = async () => {
+    try {
+      await toggleArchiveGroup(id);
+      await load();
+    } catch {
+      setError("Could not toggle archive state");
+    }
+  };
+
+  const handleSetBudget = async () => {
+    const current = data.group.budget ? (data.group.budget / 100).toFixed(2) : "";
+    const input = window.prompt("Enter trip budget in ₹ (or 0 to remove budget):", current);
+    if (input !== null) {
+      try {
+        await updateBudget(id, { budget: input });
+        await load();
+      } catch {
+        setError("Could not update budget");
+      }
     }
   };
 
@@ -252,7 +450,6 @@ function GroupDetail() {
     ].sort((a, b) => new Date(b.at) - new Date(a.at));
 
     return combined.filter((entry) => {
-      // Filter by type / status
       if (filterType === "expenses" && entry.kind !== "expense") return false;
       if (filterType === "settlements" && entry.kind !== "settlement") return false;
       if (
@@ -271,14 +468,12 @@ function GroupDetail() {
       )
         return false;
 
-      // Filter by category (applies to expenses)
       if (filterCategory !== "all") {
         if (entry.kind !== "expense" || (entry.expense.category || "Other") !== filterCategory) {
           return false;
         }
       }
 
-      // Filter by member
       if (filterMember !== "all") {
         if (entry.kind === "expense") {
           const payerId = entry.expense.paidBy?._id || entry.expense.paidBy;
@@ -340,12 +535,17 @@ function GroupDetail() {
 
         <div className="page-head">
           <div>
-            <h1>{group.name}</h1>
+            <h1>
+              {group.name} {group.isArchived && <span className="category-tag">Archived</span>}
+            </h1>
             <p className="muted">
               {group.members.map((member) => member.fullName).join(" · ")}
             </p>
           </div>
           <div className="header-actions">
+            <button type="button" className="btn-outline" onClick={handleToggleArchive}>
+              {group.isArchived ? "Restore Group" : "Archive Group"}
+            </button>
             <button type="button" className="btn-outline" onClick={handleExportCSV}>
               Export CSV
             </button>
@@ -359,6 +559,15 @@ function GroupDetail() {
         </div>
 
         {error && <p className="error">{error}</p>}
+
+        {group.isArchived && (
+          <div className="archive-banner">
+            <span>📁 This group is archived. Balances are frozen and modifications are locked.</span>
+            <button type="button" className="btn-secondary" onClick={handleToggleArchive}>
+              Unarchive
+            </button>
+          </div>
+        )}
 
         {/* Balance cards */}
         <section className="balance-grid">
@@ -398,7 +607,7 @@ function GroupDetail() {
                     <strong>{nameById[item.from]}</strong> pays{" "}
                     <strong>{nameById[item.to]}</strong> {formatINR(item.amount)}
                   </span>
-                  {item.from === user._id ? (
+                  {item.from === user._id && !group.isArchived ? (
                     <button
                       type="button"
                       className="btn-secondary"
@@ -410,9 +619,19 @@ function GroupDetail() {
                       Review payment
                     </button>
                   ) : (
-                    <span className="payment-waiting">
-                      Awaiting {nameById[item.from]}
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center" }}>
+                      <span className="payment-waiting">
+                        Awaiting {nameById[item.from]}
+                      </span>
+                      <button
+                        type="button"
+                        className="nudge-btn"
+                        onClick={() => handleNudge(nameById[item.from], item.amount)}
+                        title="Copy polite payment reminder"
+                      >
+                        Nudge 🔔
+                      </button>
+                    </div>
                   )}
                 </li>
               ))}
@@ -422,7 +641,13 @@ function GroupDetail() {
 
         {/* Dashboard and Analytics */}
         <section className="paper-card analytics-card">
-          <h2>Dashboard & Analytics</h2>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2>Dashboard & Analytics</h2>
+            <button type="button" className="btn-link" onClick={handleSetBudget}>
+              {analytics?.budget?.target > 0 ? "✏️ Edit budget" : "➕ Set trip budget"}
+            </button>
+          </div>
+
           <div className="analytics-stats-grid">
             <div className="stat-card">
               <span className="stat-label">Total group spending</span>
@@ -458,6 +683,39 @@ function GroupDetail() {
               </span>
             </div>
           </div>
+
+          {/* Group Budget Progress Meter */}
+          {analytics?.budget?.target > 0 && (
+            <div className="budget-section">
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                <span>
+                  <strong>Trip Budget:</strong> {formatINR(analytics.budget.spent)} of{" "}
+                  {formatINR(analytics.budget.target)} ({analytics.budget.percentage}%)
+                </span>
+                <span>
+                  {analytics.budget.isOverBudget ? (
+                    <span className="budget-alert">
+                      Over budget by {formatINR(analytics.budget.spent - analytics.budget.target)}
+                    </span>
+                  ) : (
+                    <span>Remaining: {formatINR(analytics.budget.remaining)}</span>
+                  )}
+                </span>
+              </div>
+              <div className="budget-meter-track">
+                <div
+                  className={`budget-meter-fill ${
+                    analytics.budget.isOverBudget
+                      ? "danger"
+                      : analytics.budget.percentage >= 75
+                      ? "warning"
+                      : "normal"
+                  }`}
+                  style={{ width: `${Math.min(100, analytics.budget.percentage)}%` }}
+                />
+              </div>
+            </div>
+          )}
 
           {(analytics?.categories?.length > 0 || analytics?.monthlySpending?.length > 0) && (
             <div className="analytics-breakdown-grid">
@@ -518,138 +776,278 @@ function GroupDetail() {
 
         {/* Expense form and Activity feed */}
         <div className="two-col">
-          <form className="paper-card" onSubmit={handleExpense}>
-            <h2>Add expense</h2>
-            <label>
-              What for
-              <input
-                type="text"
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                placeholder="Dinner, cab, groceries"
-                required
-              />
-            </label>
-            <label>
-              Category
-              <select
-                value={category}
-                onChange={(event) => setCategory(event.target.value)}
-              >
-                {CATEGORIES.map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Amount (₹)
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                required
-              />
-            </label>
-            <label>
-              Notes or receipt (optional)
-              <input
-                type="text"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Receipt #, hotel invoice, or details"
-              />
-            </label>
-            <label>
-              Paid by
-              <select
-                value={paidBy}
-                onChange={(event) => setPaidBy(event.target.value)}
-              >
-                {group.members.map((member) => (
-                  <option key={member._id} value={member._id}>
-                    {member.fullName}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <fieldset>
-              <legend>How to split</legend>
-              <label className="check-row">
-                <input
-                  type="radio"
-                  name="split-mode"
-                  value="equal"
-                  checked={splitMode === "equal"}
-                  onChange={(event) => setSplitMode(event.target.value)}
-                />
-                Split equally
-              </label>
-              <label className="check-row">
-                <input
-                  type="radio"
-                  name="split-mode"
-                  value="custom"
-                  checked={splitMode === "custom"}
-                  onChange={(event) => setSplitMode(event.target.value)}
-                />
-                Enter different amounts
-              </label>
-            </fieldset>
-            <fieldset>
-              <legend>
-                {splitMode === "equal" ? "Split equally among" : "Custom shares"}
-              </legend>
-              {group.members.map((member) => (
-                <div
-                  key={member._id}
-                  className={splitMode === "custom" ? "custom-split-row" : ""}
-                >
-                  <label className="check-row">
-                    <input
-                      type="checkbox"
-                      checked={splitAmong.includes(member._id)}
-                      onChange={() => toggleSplit(member._id)}
-                    />
-                    {member.fullName}
-                  </label>
-                  {splitMode === "custom" && (
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={customAmounts[member._id] || ""}
-                      onChange={(event) =>
-                        setCustomAmounts((current) => ({
-                          ...current,
-                          [member._id]: event.target.value,
-                        }))
-                      }
-                      placeholder="₹ amount"
-                      disabled={!splitAmong.includes(member._id)}
-                      aria-label={`${member.fullName}'s share`}
-                    />
-                  )}
+          {!group.isArchived ? (
+            <form className="paper-card" onSubmit={handleExpense}>
+              <h2>{editingExpenseId ? "Edit expense" : "Add expense"}</h2>
+
+              {editingExpenseId && (
+                <div className="edit-form-banner">
+                  <span>Modifying existing expense</span>
+                  <button type="button" className="btn-link" onClick={resetExpenseForm}>
+                    Cancel edit
+                  </button>
                 </div>
-              ))}
-              {splitMode === "custom" && (
-                <p className="custom-split-total">
-                  Entered: {formatINR(customSplitTotal)} · Total:{" "}
-                  {formatINR(Math.round(Number(amount) * 100) || 0)}
-                </p>
               )}
-            </fieldset>
-            <button
-              type="submit"
-              className="btn-primary"
-              disabled={isSubmittingExpense}
-            >
-              {isSubmittingExpense ? "Saving expense..." : "Save expense"}
-            </button>
-          </form>
+
+              <label>
+                What for
+                <input
+                  type="text"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  placeholder="Dinner, cab, groceries"
+                  required
+                />
+              </label>
+
+              <label>
+                Category
+                <select
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Amount (₹)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  required
+                />
+              </label>
+
+              <label>
+                Notes or receipt (optional)
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Receipt #, hotel invoice, or details"
+                />
+              </label>
+
+              <fieldset>
+                <legend>Paid by</legend>
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={isMultiPayer}
+                    onChange={(e) => setIsMultiPayer(e.target.checked)}
+                  />
+                  Multiple people paid for this
+                </label>
+
+                {!isMultiPayer ? (
+                  <select
+                    value={paidBy}
+                    onChange={(event) => setPaidBy(event.target.value)}
+                  >
+                    {group.members.map((member) => (
+                      <option key={member._id} value={member._id}>
+                        {member.fullName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div>
+                    {group.members.map((member) => (
+                      <div key={member._id} className="custom-split-row" style={{ marginTop: 6 }}>
+                        <span>{member.fullName}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="₹ paid"
+                          value={payerAmounts[member._id] || ""}
+                          onChange={(e) =>
+                            setPayerAmounts((cur) => ({
+                              ...cur,
+                              [member._id]: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    ))}
+                    <p className="custom-split-total">
+                      Total paid: {formatINR(multiPayerTotal)} · Target:{" "}
+                      {formatINR(Math.round(Number(amount) * 100) || 0)}
+                    </p>
+                  </div>
+                )}
+              </fieldset>
+
+              <fieldset>
+                <legend>How to split</legend>
+                <label className="check-row">
+                  <input
+                    type="radio"
+                    name="split-mode"
+                    value="equal"
+                    checked={splitMode === "equal"}
+                    onChange={(event) => setSplitMode(event.target.value)}
+                  />
+                  Split equally
+                </label>
+                <label className="check-row">
+                  <input
+                    type="radio"
+                    name="split-mode"
+                    value="custom"
+                    checked={splitMode === "custom"}
+                    onChange={(event) => setSplitMode(event.target.value)}
+                  />
+                  Enter different amounts (₹)
+                </label>
+                <label className="check-row">
+                  <input
+                    type="radio"
+                    name="split-mode"
+                    value="percentage"
+                    checked={splitMode === "percentage"}
+                    onChange={(event) => setSplitMode(event.target.value)}
+                  />
+                  Split by percentages (%)
+                </label>
+                <label className="check-row">
+                  <input
+                    type="radio"
+                    name="split-mode"
+                    value="shares"
+                    checked={splitMode === "shares"}
+                    onChange={(event) => setSplitMode(event.target.value)}
+                  />
+                  Split by shares / weights
+                </label>
+              </fieldset>
+
+              <fieldset>
+                <legend>
+                  {splitMode === "equal"
+                    ? "Split equally among"
+                    : splitMode === "percentage"
+                    ? "Percentages for members"
+                    : splitMode === "shares"
+                    ? "Shares for members"
+                    : "Custom shares"}
+                </legend>
+                {group.members.map((member) => (
+                  <div
+                    key={member._id}
+                    className={splitMode !== "equal" ? "custom-split-row" : ""}
+                  >
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={splitAmong.includes(member._id)}
+                        onChange={() => toggleSplit(member._id)}
+                      />
+                      {member.fullName}
+                    </label>
+
+                    {splitMode === "custom" && (
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={customAmounts[member._id] || ""}
+                        onChange={(event) =>
+                          setCustomAmounts((current) => ({
+                            ...current,
+                            [member._id]: event.target.value,
+                          }))
+                        }
+                        placeholder="₹ amount"
+                        disabled={!splitAmong.includes(member._id)}
+                        aria-label={`${member.fullName}'s share`}
+                      />
+                    )}
+
+                    {splitMode === "percentage" && (
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={customPercentages[member._id] || ""}
+                        onChange={(event) =>
+                          setCustomPercentages((current) => ({
+                            ...current,
+                            [member._id]: event.target.value,
+                          }))
+                        }
+                        placeholder="% share"
+                        disabled={!splitAmong.includes(member._id)}
+                        aria-label={`${member.fullName}'s percentage`}
+                      />
+                    )}
+
+                    {splitMode === "shares" && (
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={customShares[member._id] || "1"}
+                        onChange={(event) =>
+                          setCustomShares((current) => ({
+                            ...current,
+                            [member._id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Shares (e.g. 1, 2)"
+                        disabled={!splitAmong.includes(member._id)}
+                        aria-label={`${member.fullName}'s shares`}
+                      />
+                    )}
+                  </div>
+                ))}
+
+                {splitMode === "custom" && (
+                  <p className="custom-split-total">
+                    Entered: {formatINR(customSplitTotal)} · Total:{" "}
+                    {formatINR(Math.round(Number(amount) * 100) || 0)}
+                  </p>
+                )}
+                {splitMode === "percentage" && (
+                  <p className="custom-split-total">
+                    Total percentage: {customPercentageTotal.toFixed(1)}% / 100%
+                  </p>
+                )}
+                {splitMode === "shares" && (
+                  <p className="custom-split-total">
+                    Total shares: {customSharesTotal}
+                  </p>
+                )}
+              </fieldset>
+
+              <button
+                type="submit"
+                className="btn-primary"
+                disabled={isSubmittingExpense}
+              >
+                {isSubmittingExpense
+                  ? "Saving..."
+                  : editingExpenseId
+                  ? "Update expense"
+                  : "Save expense"}
+              </button>
+            </form>
+          ) : (
+            <div className="paper-card">
+              <h2>Group is archived</h2>
+              <p className="muted">
+                This group has been archived. Unarchive it to add or edit expenses.
+              </p>
+            </div>
+          )}
 
           {/* Activity Timeline with filters */}
           <div className="paper-card">
@@ -722,7 +1120,12 @@ function GroupDetail() {
                       </div>
                       <span>{formatINR(entry.expense.amount)}</span>
                       <p>
-                        {entry.expense.paidBy?.fullName} paid · split with{" "}
+                        {Array.isArray(entry.expense.payers) && entry.expense.payers.length > 1
+                          ? `Split across payers (${entry.expense.payers
+                              .map((p) => p.userId?.fullName || "Member")
+                              .join(", ")})`
+                          : `${entry.expense.paidBy?.fullName} paid`}{" "}
+                        · split with{" "}
                         {entry.expense.splits
                           ?.map((split) => split.userId?.fullName)
                           .filter(Boolean)
@@ -731,6 +1134,27 @@ function GroupDetail() {
                       {entry.expense.notes && (
                         <p className="activity-note">Note: {entry.expense.notes}</p>
                       )}
+
+                      {!group.isArchived &&
+                        (entry.expense.paidBy?._id === user._id ||
+                          group.createdBy === user._id) && (
+                          <div className="activity-actions">
+                            <button
+                              type="button"
+                              className="btn-link"
+                              onClick={() => startEditExpense(entry.expense)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-link danger"
+                              onClick={() => handleDeleteExpense(entry.expense._id)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
                     </li>
                   ) : (
                     <li
@@ -785,6 +1209,9 @@ function GroupDetail() {
           </div>
         </div>
       </main>
+
+      {/* Toast Notification */}
+      {nudgeToast && <div className="toast">{nudgeToast}</div>}
 
       {/* Payment Settlement Modal */}
       {selectedPayment && (

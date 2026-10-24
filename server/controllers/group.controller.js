@@ -2,7 +2,7 @@ const Group = require("../models/group.model");
 const Expense = require("../models/expense.model");
 const Settlement = require("../models/settlement.model");
 const makeInviteCode = require("../utils/inviteCode");
-const { computeNets, simplifyDebts } = require("../utils/money");
+const { computeNets, simplifyDebts, rupeesToPaise } = require("../utils/money");
 
 const memberIds = (group) => group.members.map((member) => member._id.toString());
 
@@ -20,10 +20,20 @@ const computeAnalytics = (group, expenses) => {
   });
 
   expenses.forEach((exp) => {
-    const payerId = exp.paidBy?._id ? exp.paidBy._id.toString() : exp.paidBy?.toString();
-    if (memberPaidMap[payerId] !== undefined) {
-      memberPaidMap[payerId] += exp.amount;
+    if (Array.isArray(exp.payers) && exp.payers.length > 0) {
+      exp.payers.forEach((p) => {
+        const pId = p.userId?._id ? p.userId._id.toString() : p.userId?.toString();
+        if (memberPaidMap[pId] !== undefined) {
+          memberPaidMap[pId] += (p.amount || 0);
+        }
+      });
+    } else {
+      const payerId = exp.paidBy?._id ? exp.paidBy._id.toString() : exp.paidBy?.toString();
+      if (memberPaidMap[payerId] !== undefined) {
+        memberPaidMap[payerId] += exp.amount;
+      }
     }
+
     exp.splits?.forEach((split) => {
       const splitId = split.userId?._id ? split.userId._id.toString() : split.userId?.toString();
       if (memberShareMap[splitId] !== undefined) {
@@ -74,11 +84,21 @@ const computeAnalytics = (group, expenses) => {
 
   const monthlySpending = Object.values(monthlyTotals).sort((a, b) => a.key.localeCompare(b.key));
 
+  const budgetPaise = group.budget || 0;
+  const budgetAnalytics = {
+    target: budgetPaise,
+    spent: totalSpending,
+    remaining: Math.max(0, budgetPaise - totalSpending),
+    percentage: budgetPaise > 0 ? Math.round((totalSpending / budgetPaise) * 100) : 0,
+    isOverBudget: budgetPaise > 0 && totalSpending > budgetPaise,
+  };
+
   return {
     totalSpending,
     topPayer,
     categories,
     monthlySpending,
+    budget: budgetAnalytics,
     memberStats: group.members.map((m) => {
       const id = m._id.toString();
       return {
@@ -113,17 +133,21 @@ const buildSummary = (group, expenses, settlements) => {
 
 const createGroup = async (req, res) => {
   try {
-    const { name } = req.body;
+    const { name, budget } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: "Group name is required" });
     }
+
+    const budgetPaise = budget ? (rupeesToPaise(budget) || 0) : 0;
 
     const group = await Group.create({
       name: name.trim(),
       inviteCode: makeInviteCode(),
       createdBy: req.user._id,
       members: [req.user._id],
+      budget: budgetPaise,
+      isArchived: false,
     });
 
     const populated = await Group.findById(group._id).populate("members", "fullName email");
@@ -190,6 +214,7 @@ const getGroup = async (req, res) => {
 
     const expenses = await Expense.find({ group: group._id })
       .populate("paidBy", "fullName email")
+      .populate("payers.userId", "fullName email")
       .populate("splits.userId", "fullName email")
       .sort({ createdAt: -1 });
 
@@ -204,9 +229,57 @@ const getGroup = async (req, res) => {
   }
 };
 
+const toggleArchiveGroup = async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.id);
+
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    if (!isMember(group, req.user._id)) {
+      return res.status(403).json({ message: "You are not in this group" });
+    }
+
+    group.isArchived = !group.isArchived;
+    await group.save();
+
+    res.status(200).json({
+      isArchived: group.isArchived,
+      message: group.isArchived ? "Group archived" : "Group restored",
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+const updateBudget = async (req, res) => {
+  try {
+    const { budget } = req.body;
+    const group = await Group.findById(req.params.id);
+
+    if (!group) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    if (!isMember(group, req.user._id)) {
+      return res.status(403).json({ message: "You are not in this group" });
+    }
+
+    group.budget = budget ? (rupeesToPaise(budget) || 0) : 0;
+    await group.save();
+
+    res.status(200).json({ budget: group.budget, message: "Budget updated" });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   createGroup,
   listGroups,
   joinGroup,
   getGroup,
+  toggleArchiveGroup,
+  updateBudget,
 };
