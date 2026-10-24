@@ -51,7 +51,7 @@ mongoose
   .then(() => {
     console.log("Connected to MongoDB");
     const port = Number(process.env.PORT) || 5000;
-    app.listen(port, () => {
+    app.listen(port, "0.0.0.0", () => {
       console.log(`SplitFair API running on port ${port}`);
     });
   })
