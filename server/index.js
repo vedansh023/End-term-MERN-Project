@@ -39,7 +39,10 @@ app.use("/api", (req, res) => {
   res.status(404).json({ message: "API route not found" });
 });
 
-const clientBuildPath = path.join(__dirname, "public");
+const clientBuildPath = fs.existsSync(path.join(__dirname, "public", "index.html"))
+  ? path.join(__dirname, "public")
+  : path.join(__dirname, "../client/dist");
+
 if (fs.existsSync(path.join(clientBuildPath, "index.html"))) {
   app.use(express.static(clientBuildPath));
   app.get("*", (req, res) => {

@@ -8,11 +8,95 @@ const memberIds = (group) => group.members.map((member) => member._id.toString()
 
 const isMember = (group, userId) => memberIds(group).includes(userId.toString());
 
+const computeAnalytics = (group, expenses) => {
+  const totalSpending = expenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+  const memberPaidMap = {};
+  const memberShareMap = {};
+  group.members.forEach((m) => {
+    const id = m._id.toString();
+    memberPaidMap[id] = 0;
+    memberShareMap[id] = 0;
+  });
+
+  expenses.forEach((exp) => {
+    const payerId = exp.paidBy?._id ? exp.paidBy._id.toString() : exp.paidBy?.toString();
+    if (memberPaidMap[payerId] !== undefined) {
+      memberPaidMap[payerId] += exp.amount;
+    }
+    exp.splits?.forEach((split) => {
+      const splitId = split.userId?._id ? split.userId._id.toString() : split.userId?.toString();
+      if (memberShareMap[splitId] !== undefined) {
+        memberShareMap[splitId] += split.share;
+      }
+    });
+  });
+
+  let topPayer = null;
+  let maxPaid = -1;
+  group.members.forEach((m) => {
+    const id = m._id.toString();
+    const paid = memberPaidMap[id] || 0;
+    if (paid > maxPaid) {
+      maxPaid = paid;
+      topPayer = {
+        userId: id,
+        fullName: m.fullName,
+        amount: paid,
+      };
+    }
+  });
+
+  const categoryTotals = {};
+  expenses.forEach((exp) => {
+    const cat = exp.category || "Other";
+    categoryTotals[cat] = (categoryTotals[cat] || 0) + exp.amount;
+  });
+
+  const categories = Object.entries(categoryTotals)
+    .map(([category, amount]) => ({
+      category,
+      amount,
+      percentage: totalSpending > 0 ? Math.round((amount / totalSpending) * 100) : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const monthlyTotals = {};
+  expenses.forEach((exp) => {
+    const date = new Date(exp.createdAt);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+    const label = date.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    if (!monthlyTotals[key]) {
+      monthlyTotals[key] = { key, label, amount: 0 };
+    }
+    monthlyTotals[key].amount += exp.amount;
+  });
+
+  const monthlySpending = Object.values(monthlyTotals).sort((a, b) => a.key.localeCompare(b.key));
+
+  return {
+    totalSpending,
+    topPayer,
+    categories,
+    monthlySpending,
+    memberStats: group.members.map((m) => {
+      const id = m._id.toString();
+      return {
+        userId: id,
+        fullName: m.fullName,
+        totalPaid: memberPaidMap[id] || 0,
+        totalShare: memberShareMap[id] || 0,
+      };
+    }),
+  };
+};
+
 const buildSummary = (group, expenses, settlements) => {
   const ids = memberIds(group);
-  const paidSettlements = settlements.filter((settlement) => settlement.status !== "delayed");
+  const paidSettlements = settlements.filter((settlement) => settlement.status === "paid");
   const nets = computeNets(ids, expenses, paidSettlements);
   const suggestions = simplifyDebts(nets);
+  const analytics = computeAnalytics(group, expenses);
 
   return {
     group,
@@ -23,6 +107,7 @@ const buildSummary = (group, expenses, settlements) => {
       net: nets[id] || 0,
     })),
     suggestions,
+    analytics,
   };
 };
 

@@ -2,9 +2,11 @@ const Group = require("../models/group.model");
 const Expense = require("../models/expense.model");
 const { rupeesToPaise, splitEqually } = require("../utils/money");
 
+const validCategories = ["Food", "Travel", "Rent", "Shopping", "Entertainment", "Utilities", "Other"];
+
 const addExpense = async (req, res) => {
   try {
-    const { description, amount, paidBy, splitAmong, splitMode = "equal" } = req.body;
+    const { description, amount, paidBy, splitAmong, splitMode = "equal", category = "Other", notes } = req.body;
     const group = await Group.findById(req.params.id);
 
     if (!group) {
@@ -86,6 +88,8 @@ const addExpense = async (req, res) => {
       group: group._id,
       description: description.trim(),
       amount: paise,
+      category: validCategories.includes(category) ? category : "Other",
+      notes: typeof notes === "string" ? notes.trim() : "",
       paidBy: payerId,
       splits,
     });

@@ -23,8 +23,13 @@ const settlementSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ["paid", "delayed"],
+    enum: ["paid", "delayed", "pending"],
     default: "paid",
+  },
+  note: {
+    type: String,
+    trim: true,
+    default: "",
   },
   createdAt: {
     type: Date,

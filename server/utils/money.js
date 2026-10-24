@@ -49,6 +49,9 @@ const computeNets = (memberIds, expenses, settlements) => {
   });
 
   settlements.forEach((settlement) => {
+    if (settlement.status && settlement.status !== "paid") {
+      return;
+    }
     const from = asId(settlement.from);
     const to = asId(settlement.to);
     if (net[from] === undefined) {

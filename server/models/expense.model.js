@@ -16,6 +16,16 @@ const expenseSchema = new mongoose.Schema({
     required: true,
     min: 1,
   },
+  category: {
+    type: String,
+    enum: ["Food", "Travel", "Rent", "Shopping", "Entertainment", "Utilities", "Other"],
+    default: "Other",
+  },
+  notes: {
+    type: String,
+    trim: true,
+    default: "",
+  },
   paidBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
