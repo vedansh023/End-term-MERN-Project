@@ -30,6 +30,8 @@ function GroupDetail() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
+  const [budgetModalOpen, setBudgetModalOpen] = useState(false);
+  const [budgetAmount, setBudgetAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [nudgeToast, setNudgeToast] = useState("");
   const [isSubmittingSettlement, setIsSubmittingSettlement] = useState(false);
@@ -342,16 +344,20 @@ function GroupDetail() {
     }
   };
 
-  const handleSetBudget = async () => {
-    const current = data.group.budget ? (data.group.budget / 100).toFixed(2) : "";
-    const input = window.prompt("Enter trip budget in ₹ (or 0 to remove budget):", current);
-    if (input !== null) {
-      try {
-        await updateBudget(id, { budget: input });
-        await load();
-      } catch {
-        setError("Could not update budget");
-      }
+  const handleSetBudget = () => {
+    setBudgetAmount(data.group.budget ? (data.group.budget / 100).toFixed(2) : "");
+    setBudgetModalOpen(true);
+  };
+
+  const saveBudget = async (event) => {
+    event.preventDefault();
+    setError("");
+    try {
+      await updateBudget(id, { budget: budgetAmount });
+      setBudgetModalOpen(false);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not update budget");
     }
   };
 
@@ -1320,6 +1326,44 @@ function GroupDetail() {
               </button>
             </div>
           </section>
+        </div>
+      )}
+      {budgetModalOpen && (
+        <div className="payment-modal-backdrop" role="presentation">
+          <form
+            className="paper-card payment-modal"
+            onSubmit={saveBudget}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="budget-modal-title"
+          >
+            <p className="eyebrow">Group budget</p>
+            <h2 id="budget-modal-title">Set trip budget</h2>
+            <p className="muted">
+              Set the total spending limit for {group.name}. Expenses will be tracked against it.
+            </p>
+            <label>
+              Budget amount (₹)
+              <input
+                type="number"
+                min="0.01"
+                step="0.01"
+                value={budgetAmount}
+                onChange={(event) => setBudgetAmount(event.target.value)}
+                placeholder="5000.00"
+                required
+                autoFocus
+              />
+            </label>
+            <div className="payment-actions">
+              <button type="button" className="btn-ghost" onClick={() => setBudgetModalOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn-primary">
+                Save budget
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>
