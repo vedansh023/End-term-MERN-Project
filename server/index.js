@@ -1,4 +1,5 @@
 require("dotenv").config();
+const fs = require("fs");
 const path = require("path");
 const express = require("express");
 const mongoose = require("mongoose");
@@ -38,8 +39,8 @@ app.use("/api", (req, res) => {
   res.status(404).json({ message: "API route not found" });
 });
 
-if (process.env.NODE_ENV === "production") {
-  const clientBuildPath = path.join(__dirname, "public");
+const clientBuildPath = path.join(__dirname, "public");
+if (fs.existsSync(path.join(clientBuildPath, "index.html"))) {
   app.use(express.static(clientBuildPath));
   app.get("*", (req, res) => {
     res.sendFile(path.join(clientBuildPath, "index.html"));
