@@ -12,7 +12,7 @@ Built with **React 19 + Express.js + MongoDB Atlas**, hosted on **Render**.
 | :--- | :--- |
 | **GitHub Repository** | [https://github.com/vedansh023/End-term-MERN-Project](https://github.com/vedansh023/End-term-MERN-Project) |
 | **Live Deployed App** | [https://end-term-mern-project.onrender.com](https://end-term-mern-project.onrender.com) |
-| **Demo Video** | *(add your video link here before submitting)* |
+| **Demo Video** | [https://www.youtube.com/watch?v=ccOvmMv0v4k](https://www.youtube.com/watch?v=ccOvmMv0v4k) |
 | **Health Check Endpoint** | `/api/health` |
 
 ---
